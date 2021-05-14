@@ -1,7 +1,12 @@
-<h1>Welcome to my page!</h1>
+# Welcome to my page MD!
 
-<br>
 My cheat sheets on:
+
+- [Python](cheat-sheets/python.html)
+- [Docker](cheat-sheets/docker.html)
+- [Other](cheat-sheets/other.html)
+-----------------
+
 <ul>
 <li><a href='cheat-sheets/python.html' target="_blank">Python</a></li>
 <li><a href='cheat-sheets/docker.html' target="_blank">Docker</a></li>

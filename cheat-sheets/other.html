@@ -1,0 +1,41 @@
+<h4>Format WORD with template:</h4>
+<pre>
+    Sub ApplyTemplate()
+        ActiveDocument.AttachedTemplate = "C:\Users\rosa\Downloads\Report Template Updated Version.dotx"
+    End Sub
+</pre>
+
+<h4>Writing in RAM memory:</h4>
+
+<pre>
+    sudo mount -t tmpfs -o size=2g tmpfs /meteo_storage/untar_tmpfs
+</pre>
+
+<h4>Clear cache memory:</h4>
+<pre>
+    sync && echo 3 > /proc/sys/vm/drop_caches
+    or
+    /sbin/sysctl -w vm.drop_caches=3
+</pre>
+
+<p>Release memory used by the Linux kernel on caches (From <a href="http://www.commandlinefu.com/commands/view/1026/empty-the-linux-buffer-cache">http://www.commandlinefu.com/commands/view/1026/empty-the-linux-buffer-cache</a>):
+<ul>
+<li>=1 to free pagecache</li>
+<li>=2 to free dentries and inodes</li>
+<li>=3 to free pagecache, dentries and inodes</li>
+</ul>
+</p>
+
+<h4>Mounting samba shares:</h4>
+
+<pre>
+    sudo mount -t cifs //ono4/brett_dk2 /mnt/brett_dk2 -o username=rosa,password=xxx
+</pre>
+
+<h4>Vim:</h4>
+<ul>
+<li>dd = delete line</li>
+<li>yy = copy line</li>
+<li>p = paste line after current line</li>
+<li>P = paste line before current line</li>
+</ul>

@@ -1,0 +1,56 @@
+... the image is running a container ...<br>
+<br>
+<h2>Clean:</h2>
+<pre>    docker rm -v $(docker ps -a -q -f status=exited)
+    docker ps -a | grep Exit | cut -d ' ' -f 1 | xargs docker rm
+    docker rmi $(docker images -f "dangling=true" -q)
+    docker rmi $(docker images | grep "^&lt;none&gt;" | awk "{print $3}")
+</pre>
+
+<h2>OSX:</h2>
+<pre>    rm ~/Library/Containers/com.docker.docker/Data (logout, login)</pre>
+
+<h2>Open X: </h2>
+<pre>    open -a XQuartz
+    socat TCP-LISTEN:6000,reuseaddr,fork UNIX-CLIENT:\"$DISPLAY\"
+    docker run -ti --rm -u metocean -e DISPLAY=192.168.99.1:0 -v /code:/code &lt;image&gt;
+    ifconfig | grep vboxnet0
+</pre>
+<br>
+
+<h2>Jupyter Notebook with UID/GID:</h2>
+
+<p><a href="https://github.com/rosatrancoso/test_jupyter">https://github.com/rosatrancoso/test_jupyter</a></p>
+
+<pre>    docker run -it --rm -p 8888:8888 \
+        -e JUPYTER_ENABLE_LAB=yes \
+        -e NB_UID=`id -u` -e NB_GID=`id -g` \
+        -v $PWD:/home/jovyan/work \
+        jupyter/scipy-notebook</pre>
+
+<h2>Docker and Conda:</h2>
+
+<p><a href="https://github.com/rosatrancoso/docker-condatests">https://github.com/rosatrancoso/docker-condatests</a></p>
+
+<h3>Creating a new environment from scratch:</h3>
+
+<pre>
+    FROM conda/miniconda3-centos7
+    ADD .condarc /root/.condarc
+    RUN conda init bash &amp;&amp;\
+        conda create -n myenv wget &amp;&amp;\
+        echo "conda activate myenv" &gt;&gt; ~/.bashrc
+</pre>
+
+<h3>Creating a new environment from yml file:</h3>
+
+<p>Note: The yaml file is created by <i>conda env export &gt; environment.yml</i>.</p>
+
+<pre>
+    FROM conda/miniconda3-centos7
+    ADD environment.yml /tmp/environment.yml
+    RUN conda init bash &amp;&amp;\
+        conda env create -f /tmp/environment.yml &amp;&amp;\
+        echo "conda activate myenv" &gt;&gt; ~/.bashrc
+</pre>
+
