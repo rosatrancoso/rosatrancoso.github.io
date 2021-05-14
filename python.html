@@ -1,0 +1,866 @@
+<h1>S3 files </h1>
+
+<pre>
+    def download_files_from_s3_regions (remote_prefix, local_dir,
+                                        bucketpattern='output-from-amps-{region}',
+                                        regions=['us-east-1', 'us-east-2', 'us-west-1', 'us-west-2'],
+                                        aws_access_key_id=None, aws_secret_access_key=None):
+
+        import boto3, os
+
+        bucketnames = [bucketpattern.format(region=region) for region in regions]
+        print(bucketnames)
+
+        s3res = boto3.resource('s3', aws_access_key_id=aws_access_key_id,
+                               aws_secret_access_key=aws_secret_access_key)
+
+        buckets = {}
+        for bucketname in bucketnames:
+            buckets[bucketname] = s3res.Bucket(bucketname)
+
+        if not os.path.exists(local_dir):
+            print('Creating local dir {}'.format(local_dir))
+            os.makedirs(local_dir)
+
+        remote_files = {}
+        for bucketname in bucketnames:
+            remote_files[bucketname] = [obj.key for obj in buckets[bucketname].objects.filter(Prefix=remote_prefix)]
+
+
+        print('Remote files:')
+        for k,v in remote_files.items():
+            print('{}: {}'.format(k,v))
+        print('')
+
+        local_files = []
+        for bucketname in bucketnames:
+            for remote_file in remote_files[bucketname]:
+                local_file = os.path.basename(remote_file)
+                if local_file in local_files:
+                    continue
+                local_filepath = os.path.join(local_dir, local_file)
+                print('Downloading {}'.format(local_filepath))
+                buckets[bucketname].download_file(Key=remote_file, Filename=local_filepath)
+                local_files += [local_file]
+
+        return local_files
+</pre>
+
+<hr>
+<h1>Logging to console</h1>
+
+All logging (parent and child modules) has the same log level:
+<pre>
+    logging.basicConfig(stream=sys.stdout,
+                        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                        level=logging.INFO)
+    logger = logging.getLogger('main')
+</pre>
+
+Just outer script has debug level:
+<pre>
+    logging.basicConfig(stream=sys.stdout,
+                        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger('main')
+    logger.setLevel(logging.DEBUG)
+</pre>
+
+
+<hr>
+<h1>Partial format of strings</h1>
+
+<pre>
+    def partial_format(string1, dict1={}):
+        """ hack to format partial string """
+        format_fields = re.findall(r'\{(.*?)\}', string1)  # list
+        for k, v in dict1.iteritems():
+            for field in format_fields:
+                aux = field.split(':') # in case there are other : like in hour:min:sec
+                fk = aux[0]
+                if k == fk:
+                    field = '{' + field + '}'
+                    value = field.format(**{k: v})
+                    string1 = string1.replace(field, value)
+                    break
+        return string1
+
+    basefile = 'aaa{cycle:%Y%m}_{prog:03d}_{xpto:.3f}'
+    partial_format(basefile, dict(cycle=datetime.datetime.now(), xpto=3, qqq=3))
+</pre>
+
+<hr>
+<h1>Subprocess</h1>
+
+Execute a system command, passing STDOUT and STDERR to logger, while the command runs.
+
+<pre>
+    def execute(cmd, **kwargs):
+        """Execute a system command, passing STDOUT and STDERR to logger.
+
+        Source: https://stackoverflow.com/a/4417735/2063031
+        """
+        logger.info("cmd: '%s'", cmd)
+        proc = subprocess.Popen(
+            shlex.split(cmd),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            **kwargs)
+        for line in iter(proc.stdout.readline, ""):
+            logger.debug(line.strip())
+        proc.stdout.close()
+        return_code = proc.wait()
+        logger.debug('return_code = %i' % return_code)
+        if return_code:
+            raise subprocess.CalledProcessError(return_code, cmd)
+</pre>
+
+<hr>
+<h1>Matplotlib</h1>
+
+2.0.2 yes, fantastic colours but doesn't work with basemap 1.10, ,meaning something about the axes is different and I didn't understand what in a certain amount of time. So, downgraded to 1.4.3 but want to <a href="https://matplotlib.org/users/dflt_style_changes.html" target="_blank">use the new beautiful colours</a>:
+<p></p>
+<pre>
+    import matplotlib.pyplot as plt
+    from cycler import cycler
+    new_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728',
+                  '#9467bd', '#8c564b', '#e377c2', '#7f7f7f',
+                  '#bcbd22', '#17becf']
+    plt.rc('axes', color_cycle=new_colors)
+</pre>
+<p></p>
+
+<h2>Plot categories with colors</h2>
+<pre>
+    plt.scatter(np.arange(10), np.arange(10), c=np.arange(10), cmap='tab10', s=5)
+    plt.colorbar(boundaries=np.arange(11)-0.5).set_ticks(np.arange(10))
+</pre>
+
+<h2>Common Colorbar</h2>
+
+also works with imshow
+
+<pre>
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    x = np.arange(-5,5)
+    y = np.arange(-6,4)
+
+    fig, axes = plt.subplots(nrows=2, ncols=2)
+    for ax in axes.flat:
+        im = ax.pcolormesh(x,y, np.random.random((10,10)), vmin=0, vmax=1)
+
+    fig.subplots_adjust(right=0.8)
+    cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
+    fig.colorbar(im, cax=cbar_ax)
+</pre>
+
+<hr>
+<h1>Cartopy</h1>
+
+Example from <a href="https://ocefpaf.github.io/python4oceanographers/blog/2013/09/23/cartopy/">https://ocefpaf.github.io/python4oceanographers/blog/2013/09/23/cartopy/</a>
+<p></p>
+<pre>
+    import matplotlib.pyplot as plt
+    import cartopy.crs as ccrs
+
+    fig = plt.figure(figsize=(10,5))
+    ax = plt.axes(projection=ccrs.PlateCarree())
+    ax.coastlines()
+    gl = ax.gridlines(draw_labels=True)
+    gl.xlabels_top = False
+    gl.ylabels_right = False
+</pre>
+<p></p>
+
+
+<h2>Cartopy with subplots:</h2>
+<p></p>
+<pre>
+    fig, axs= plt.subplots(1,2, subplot_kw={'projection': ccrs.PlateCarree()})
+</pre>
+<p></p>
+
+<h2>Cartopy with pcolormesh:</h2>
+<p></p>
+<pre>
+    fig = plt.figure(figsize=(10,5))
+    ax = plt.axes(projection=ccrs.PlateCarree())
+    im = plt.pcolormesh(lon, lat, var2d, vmin=vlims[0], vmax=vlims[1], transform=ccrs.PlateCarree())
+    ax.coastlines()
+    ax.set_title(filein)
+    gl = ax.gridlines(draw_labels=True)
+    gl.xlabels_top = False
+    gl.ylabels_right = False
+    plt.colorbar(im)#, cax=pos_cax)
+</pre>
+<p></p>
+
+<h2>Crossing the dateline</h2>
+
+Bloody gridlines don't work across dateline. Have to specify manually.
+
+<p></p>
+<pre>
+    import cartopy.crs as ccrs
+    fig, ax = plt.subplots(1,1, figsize=(6,6), subplot_kw={'projection': ccrs.PlateCarree(180)})
+    ax.pcolormesh(lon, lat, var2d, transform=ccrs.PlateCarree())
+    ax.coastlines()
+    gl = ax.gridlines(draw_labels=True, xlocs=np.arange(160,190,5))
+</pre>
+<p></p>
+
+or better yet, example from <a href=https://stackoverflow.com/questions/47335851/issue-w-image-crossing-dateline-in-imshow-cartopy>https://stackoverflow.com/questions/47335851/issue-w-image-crossing-dateline-in-imshow-cartopy</a>:
+
+<pre>
+    import numpy as np
+    import cartopy.crs as ccrs
+    import matplotlib.pyplot as plt
+
+    # demo raster data
+    n1 = 300
+    m1 = 0.4
+    lat = np.arange(n1)*m1 + (-59.99)
+    lon = np.arange(n1)*m1 + (85.01)
+    dat = np.reshape(np.arange(n1*n1), [n1,n1])
+
+    cm_lon=180  # for central meridian
+
+    tran = ccrs.PlateCarree(central_longitude = cm_lon)
+    proj = tran
+
+    plt.figure(figsize=(8,8))
+    ax = plt.axes(projection=proj)
+
+    ext = [lon[0]-cm_lon, lon[-1]-cm_lon, lat[0], lat[-1]]
+    #print(ext)
+
+    ax.imshow(dat, extent=ext, \
+                  transform=tran, interpolation='nearest')
+
+    ax.coastlines(resolution='110m', color='black', linewidth=0.5, zorder=10)
+
+    # this draws grid lines only, must go beyond E/W extents
+    ax.gridlines(draw_labels=False, xlocs=[80,100,120,140,160,180,-180,-160,-140])
+
+    # this draw lables only, exclude those outside E/W extents
+    ax.gridlines(draw_labels=True, xlocs=[100,120,140,160,180,-160])
+
+    plt.show()
+</pre>
+
+
+
+<h2>Plot Decor</h2>
+<p></p>
+<pre>
+    from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+
+    def plot_decor(ax, xlocs=None):
+        ax.coastlines('50m', color='white')
+        # ax.add_feature(OCEAN, zorder=-1)#, facecolor='0.8', zorder=-1)
+        gl = ax.gridlines(draw_labels=True,xlocs=xlocs)
+        gl.xlabels_top = False
+        gl.ylabels_right = False
+        gl.xformatter = LONGITUDE_FORMATTER
+        gl.yformatter = LATITUDE_FORMATTER
+        gl.xlabel_style = {'size': 'small'}#, 'color': 'gray'}
+        gl.ylabel_style = {'size': 'small'}#, 'color': 'gray'}
+</pre>
+<p></p>
+
+<h2>Plot Decor accounting for Dateline</h2>
+<pre>
+def plot_decor(ax, xlocs=None, dx=None, xlims=None):
+    ax.coastlines('50m', color='white')
+    if dx is not None:
+        xlocs = np.arange(xlims[0], xlims[1]+dx, dx)
+    xlocs2 = xlocs
+    if xlocs is not None:
+        if xlocs[-1] > 180:
+            # this draws grid lines only, must go beyond E/W extents
+            ax.gridlines(draw_labels=False, xlocs=xlocs+[360])
+            xlocs2 = [x-360. if x > 180 else x for x in xlocs]
+            xlocs2 = xlocs2[:-1]
+    gl = ax.gridlines(draw_labels=True, xlocs=xlocs2)
+    gl.xlabels_top = False
+    gl.ylabels_right = False
+</pre>
+
+
+
+<h2>Plot Xarray with multiple dimensional coordinates (e.g. WRF)</h2>
+Example from <a href="http://xarray.pydata.org/en/stable/examples/multidimensional-coords.html" target=_blank>http://xarray.pydata.org/en/stable/examples/multidimensional-coords.html</a>
+<p></p>
+<pre>
+    import xarray as xr
+    import cartopy.crs as ccrs
+    ax = plt.axes(projection=ccrs.PlateCarree(180))
+    print d01.coords
+    # Use correct Time coordinate
+    <b>ds.swap_dims({'Time': 'Times'},inplace=True)</b>
+    d01['T2'].isel(Times=0).plot.pcolormesh(ax=ax, transform=ccrs.PlateCarree(), <b>x='XLONG', y='XLAT'</b>)
+    ax.coastlines()
+</pre>
+<p></p>
+
+<h2>Plot WRF geogrid as xarray dataset:</h2>
+<p></p>
+<pre>
+    ds = xr.open_dataset('geo_em.d02.nc')
+    ds.coords['lat_m'] = (['south_north', 'west_east'],  ds['XLAT_M'].isel(Time=0))
+    ds.coords['lon_m'] = (['south_north', 'west_east'],  ds['XLONG_M'].isel(Time=0))
+    ds.coords['time'] = (['Time'],  ds['Times'])#, {'units': 'days since 1970-01-01'})
+
+    ax = plt.axes(projection=ccrs.PlateCarree(180))
+    ds['HGT_M'].isel(Time=0).plot(ax=ax, transform=ccrs.PlateCarree(), x='lon_m', y='lat_m', cmap='Spectral_r')
+    ax.set_title('')
+    plot_decor(ax, xlocs=range(165,190,5))
+</pre>
+<p></p>
+
+<h2>Multiple plots of xarray and cartopy:</h2>
+<p></p>
+Example from <a href="http://xarray.pydata.org/en/stable/auto_gallery/plot_cartopy_facetgrid.html" target=_blank>http://xarray.pydata.org/en/stable/auto_gallery/plot_cartopy_facetgrid.html</a>
+<pre>
+    import cartopy.crs as ccrs
+    import matplotlib.pyplot as plt
+    import xarray as xr
+
+    # Load the data
+    ds = xr.tutorial.load_dataset('air_temperature')
+    air = ds.air.isel(time=[0, 724]) - 273.15
+
+    # This is the map projection we want to plot *onto*
+    map_proj = ccrs.LambertConformal(central_longitude=-95, central_latitude=45)
+
+    p = air.plot(transform=ccrs.PlateCarree(),  # the data's projection
+                 col='time', col_wrap=1,  # multiplot settings
+                 aspect=ds.dims['lon'] / ds.dims['lat'],  # for a sensible figsize
+                 subplot_kws={'projection': map_proj})  # the plot's projection
+
+    # We have to set the map's options on all four axes
+    for ax in p.axes.flat:
+        ax.coastlines()
+        ax.set_extent([-160, -30, 5, 75])
+        # Without this aspect attributes the maps will look chaotic and the
+        # "extent" attribute above will be ignored
+        ax.set_aspect('equal', 'box-forced')
+
+    plt.show()
+</pre>
+<p></p>
+
+<!-- ############################################ -->
+<!-- ############################################ -->
+<!-- ############################################ -->
+<!-- ############################################ -->
+<!-- ############################################ -->
+<!-- ############################################ -->
+
+<hr>
+<h1>Xarray</h1>
+
+<h2>Open multiple WRF files:</h2>
+<pre>
+    ds = xr.open_mfdataset(pattern, combine='nested', concat_dim='Time')
+</pre>
+
+<h2>Select by index:</h2>
+<pre>
+    ds.isel(time=0)
+    ds[dict(time=0)]
+    ds[vname].isel(time=slice(10,12))
+    ds[vname].isel(lon=1, lat=2)
+    ds.isel(lon=slice(None,None,10), lat=slice(None,None,10))
+</pre>
+
+<h2>Select by coordinate:</h2>
+<pre>
+    ds.loc[dict(space='IA')]
+    ds[vname].sel(time='2017-06-29T12:00:00',lon=0.125)
+</pre>
+
+<h2>Plot:</h2>
+In new versions: figsize = (aspect * size, size)
+
+<pre>
+    fig,ax = plt.subplots(1,1, figsize=(8,2))
+    ds[vname].isel(lon=1, lat=2).plot(ax=ax)
+    ds[vname].plot(col='time', col_wrap=5, vmin=0,vmax=0.01)
+    gfs['ugrd10m'].isel(time=(0,-1)).plot(x='longitude', y='latitude', col='time', col_wrap=2)#, vmin=-30, vmax=30)
+</pre>
+
+
+
+<h2>Create datasets:</h2>
+<h3>Method 1 (1 var, 1d lat/lon):</h3>
+<pre>
+    var = f[vname]
+    time = var.getTime()
+    time = netCDF4.num2date(time, units=time.units)
+    lon = var.getLongitude()[:]
+    lat = var.getLatitude()[:]
+    print var.shape, time.shape, lat.shape, lon.shape
+    ds = xr.Dataset({vname: (['time', 'lat', 'lon'],  var)}, coords={'lon': lon, 'lat': lat, 'time': time})
+</pre>
+
+<h3>Method 2 (2d lat/lon):</h3>
+
+<pre>
+    import xarray as xr
+    import numpy as np
+    data = np.random.random(300).reshape(15,20)
+    print data.shape
+    v2d, lat, lon = data,data,data
+    print v2d.shape, lat.shape, lon.shape
+    time = np.array([0.])
+    v2d = np.expand_dims(v2d, axis=0)  # add time dimension
+    print v2d.shape
+    dvars = {}
+    dvars['u10'] = (['time','y', 'x'],  v2d)
+    ds = xr.Dataset(dvars)
+    ds.coords['lat'] = (['y', 'x'],  lat)
+    ds.coords['lon'] = (['y', 'x'],  lon)
+    ds.coords['time'] = (['time'],  time, {'units': 'days since 1970-01-01'  })
+    ds.to_netcdf('test_irregular.nc')
+    print ds
+
+    <i>
+        Dimensions:  (time: 1, x: 20, y: 15)
+        Coordinates:
+            lat      (y, x) float64 0.9063 0.599 0.6727 0.9662 0.3724 0.9094 0.6241 ...
+            lon      (y, x) float64 0.9063 0.599 0.6727 0.9662 0.3724 0.9094 0.6241 ...
+          * time     (time) float64 0.0
+        Dimensions without coordinates: x, y
+        Data variables:
+            u10      (time, y, x) float64 0.9063 0.599 0.6727 0.9662 0.3724 0.9094 ...
+    </i>
+
+
+    ncdump -h test_irregular.nc
+    <i>
+        netcdf test_irregular {
+        dimensions:
+            time = 1 ;
+            y = 15 ;
+            x = 20 ;
+        variables:
+            double u10(time, y, x) ;
+                u10:_FillValue = NaN ;
+                u10:coordinates = "lat lon" ;
+            double lat(y, x) ;
+                lat:_FillValue = NaN ;
+            double lon(y, x) ;
+                lon:_FillValue = NaN ;
+            double time(time) ;
+                time:_FillValue = NaN ;
+                time:units = "days since 1970-01-01" ;
+        }
+    </i>
+</pre>
+
+<h3>Method 3 (compact):</h3>
+<pre>
+    ds = xr.open_dataset('some netcdf or open dap ctl')
+    variables_of_interest = ['ugrd10m', 'vgrd10m', 'tmp2m', 'vissfc', 'rh2m', 'prmslmsl']
+    vardict = {}
+
+    print "Subsetting variables"
+    for varname in variables_of_interest:
+        vardict[varname] = <b>ds.data_vars</b>[varname]
+
+    ds = xr.Dataset(data_vars=vardict, coords=<b>ds.coords</b>, attrs=<b>ds.attrs</b>, compat=<b>'broadcast_equals'</b>)
+
+    print "Writting netcdf to disk"
+    ds.to_netcdf('/tmp/out.nc')
+</pre>
+
+<h3>Method 4 (from cdms2 ctl file):</h3>
+<pre>
+    def ctl2xarray(filein, vnames = ['ugrd10m', 'vgrd10m', 'tmp2m', 'tmpsfc']):
+        f = cdms2.open(filein)
+    #     print f.listvariables()
+        data_vars = {}
+        first_time = True
+        for vname in vnames:
+            var = f[vname]
+            if first_time:
+                time = var.getTime()
+                time = netCDF4.num2date(time, units=time.units)
+                lon = var.getLongitude()[:]
+                lat = var.getLatitude()[:]
+                print var.shape, time.shape, lat.shape, lon.shape
+                first_time = False
+    #         var[var>=1e20] = np.nan
+            data_vars[vname] = (['time', 'lat', 'lon'], var.getValue())
+
+        ds = xr.Dataset(data_vars, coords={'lon': lon, 'lat': lat, 'time': time})
+        return ds
+</pre>
+
+<!-- ############################################ -->
+<!-- ############################################ -->
+<!-- ############################################ -->
+<!-- ############################################ -->
+<!-- ############################################ -->
+<!-- ############################################ -->
+
+<hr>
+<h1>Pandas</h1>
+<h2>Select from MultiIndex:</h2>
+<pre>
+    bigds.loc[(sites, 'nzra','bias'),:]
+    bigds.xs('rmse', level=2).xs('cfsr2', level=1)
+</pre>
+
+<h2>Drop levels from MultiIndex:</h2>
+<pre>
+    df[vname].isel(site=0, dum1=0)
+    df.to_dataframe().reset_index(level=0, drop=True).reset_index(level=0, drop=True)
+    ts = df.xs(0).xs(0)
+</pre>
+
+<h2>Parse dates to DatetimeIndex:</h2>
+<pre>
+    ts['time'] = pd.to_datetime(dict(year=ts['Year'], month=ts['Month'], day=ts['Day'], hour=ts['H[UTC]']))
+    ts = ts.set_index(pd.DatetimeIndex(ts['time']))
+</pre>
+
+
+<h2>Merge:</h2>
+
+<i>inner</i> only gives you common time records (default option).
+<p></p>
+<ul>
+<li><b>Series:</b>
+<pre>
+    both = a.to_frame().<b>join</b>(b.to_frame())
+</pre>
+</li>
+
+<li><b>DataFrame:</b>
+<pre>
+    both = pd.<b>merge</b>(obs,mod, how='inner', right_index=True, left_index=True, suffixes=('_obs', '_mod'))
+</pre>
+</li>
+
+<li><b>More than 2 DataFrames (slightly faster than merge 2 by 2):</b>
+<pre>
+    frames = [ xr.open_dataset(fname)[[vname]].to_dataframe() for fname in obsfiles ]
+    ds = pd.<b>concat</b>(frames,axis=1,join='outer')
+</pre>
+</li>
+</ul>
+
+
+<h2>Subtract a column from DataFrame:</h2>
+<pre>
+    err = both[cols].<b>sub</b>(both['obs'], axis=0)
+    dif = df.<b>subtract</b>(df['obs'], axis='index')
+</pre>
+
+<h2>Drop NaN:</h2>
+<pre>
+    df.dropna()              #drop all rows that have <b>any</b> NaN values
+    df.dropna(how='all')     #drop only if <b>ALL columns</b> are NaN
+</pre>
+
+<h2>Pandas plots:</h2>
+<h3>Monthly panel:</h3>
+<pre>
+    grouped = df.groupby(pd.TimeGrouper(freq='M'))
+    fig,axs = plt.subplots(12,1,sharey=True, figsize=(12,12))
+    i=0
+    for gname, dfm in grouped:
+        ax = axs[i]
+        dfm.plot(ax=ax, legend=False)
+        i+=1
+</pre>
+
+<h3>Plot Series with NaNs:</h3>
+<pre>
+    ds.interpolate().plot() # but also extrapolates
+    ds.resample('1H').interpolate(method='slinear').plot() # doesn't extrapolate; time integrity
+</pre>
+<b>slinear</b> is from scipy and doesn't extrapolate. We ensure time integrity by resampling. See <a href="https://github.com/pandas-dev/pandas/issues/16284" target="_blank">here</a>.
+
+<p></p>
+<a href='https://pandas.pydata.org/pandas-docs/stable/generated/pandas.DataFrame.resample.html' target=_blank>Defaults from pandas 0.22 are:</a>
+
+<ul>
+<li> closed : {‘right’, ‘left’}
+
+Which side of bin interval is closed. The default is ‘left’ for all frequency offsets except for ‘M’, ‘A’, ‘Q’, ‘BM’, ‘BA’, ‘BQ’, and ‘W’ which all have a default of ‘right’.
+
+<li> label : {‘right’, ‘left’}
+
+Which bin edge label to label bucket with. The default is ‘left’ for all frequency offsets except for ‘M’, ‘A’, ‘Q’, ‘BM’, ‘BA’, ‘BQ’, and ‘W’ which all have a default of ‘right’.
+</ul>
+
+<p>
+Example: closed = left, label = right is 00:00 is average from [00:00, 01:00[
+</p>
+
+<h3>Legend:</h3>
+<pre>
+    ax.legend(loc=2,ncol=2, fontsize='small', framealpha=0)
+</pre>
+
+
+<h3>Scatter matrix:</h3>
+<pre>
+    from pandas.tools.plotting import scatter_matrix
+    _ = scatter_matrix(df, alpha=0.2, figsize=(10, 10))
+</pre>
+
+<h2>Alternative to pandas to plot time series:</h2>
+<pre>
+    ax.plot_date(ts1.index.to_pydatetime(), ts1[vname])
+</pre>
+
+
+<!-- ############################################ -->
+<!-- ############################################ -->
+<!-- ############################################ -->
+<!-- ############################################ -->
+<!-- ############################################ -->
+<!-- ############################################ -->
+
+
+<h2>Xticklabels:</h2>
+
+<h3>Rotation:</h3>
+
+<ul>
+
+<li><b>Method 1:</b>
+<pre>
+     _ = plt.xticks(rotation=45)
+ </pre>
+</li>
+
+
+<li><b>Method 2:</b>
+<pre>
+    for tick in ax.get_xticklabels():
+        tick.set_rotation(45)
+</pre>
+</li>
+
+<li><b>Method 3:</b>
+<pre>
+    plt.setp(ax.xaxis.get_majorticklabels(), rotation=45)
+</pre>
+
+<b>Method 4:</b>
+
+<p>Rotates and right aligns the x labels, and moves the bottom of the axes up to make room for them</p>
+
+<pre>
+    fig.autofmt_xdate()
+</pre>
+
+The default values are a rotation angle 30 deg and horizontal alignment "right". But they can be changed in the function call. The additional bottom argument is equivalent to setting <pre>plt.subplots_adjust(bottom=bottom)</pre>
+
+<pre>
+    fig.autofmt_xdate(bottom=0.2, rotation=30, ha='right')
+</pre>
+</li>
+
+<li><b>Method 5 (pandas DataFrame)</b>
+
+<pre>
+    ds.plot(rot=0)
+</pre>
+</li>
+</ul>
+
+<h3>Format dates:</h3>
+<pre>
+    import matplotlib.dates as dates
+    ax.xaxis.set_major_locator(dates.DayLocator(interval=1))
+    ax.xaxis.set_minor_locator(dates.HourLocator(byhour=[0,6,12,18]))
+    ax.xaxis.set_major_formatter(dates.DateFormatter('%Y-%m-%d'))
+    fig.autofmt_xdate()
+</pre>
+
+
+
+
+<hr>
+<h1>Grib Files</h1>
+
+<h2>with PyNIO + xarray</h2>
+
+<pre>
+    ds = xr.open_dataset(filein, engine='pynio')
+</pre>
+
+<h2>with cfgrib + xarray</h2>
+
+<pre>
+    ds = xr.open_dataset(filein, engine='cfgrib', backend_kwargs={'filter_by_keys': {'typeOfLevel': 'surface'}})
+    ds = ds.swap_dims({'step': 'valid_time'})
+</pre>
+
+<h2>with pygrib</h2>
+
+<h3>Read data:</h3>
+
+<pre>
+    lats, lons = grb.latlons()
+    data = grb.values
+
+    or
+
+    data, lats, lons = grb.data() #(lat1=20,lat2=70,lon1=220,lon2=320)
+
+    print lons.shape, lons.min(), lons.max()
+    print lats.shape, lats.min(), lats.max()
+    print data.shape, data.min(), data.max()
+</pre>
+
+<h3>Plot data:</h3>
+<pre>
+    f = pygrib.open('gepqpf.t18z.pgrb2a.0p50.24hf024')
+    grbs = f.select()
+    print len(grbs)
+
+    fig, axs = plt.subplots(5,3, figsize=(15,15), sharex=True, sharey=True,
+                            subplot_kw={'projection': ccrs.PlateCarree()})
+    for i, grb in enumerate(grbs):
+        data, lats, lons = grb.data()
+        ax = axs.flatten()[i]
+        p1 = ax.pcolormesh(lons, lats, data, transform=ccrs.PlateCarree())
+        plt.colorbar(p1, ax=ax)
+        ax.set_title(i)
+        ax.coastlines(color='white')
+
+</pre>
+
+
+<!-- ############################################ -->
+<!-- ############################################ -->
+<!-- ############################################ -->
+<!-- ############################################ -->
+<!-- ############################################ -->
+<!-- ############################################ -->
+
+<hr>
+<h1>Windrose</h1>
+
+<h2>Simple plot:</h2>
+
+<pre>
+    from verify.core.windrose import plot_windrose
+
+    n = 500
+    ws = np.random.random(n) * 6
+    wd = np.random.random(n) * 360
+    df = pd.DataFrame({'ws':ws, 'wd': wd})
+    plot_windrose(df, kind="bar", var_name='ws', direction_name='wd')
+</pre>
+
+<h2>Subplots with same radius axis:</h2>
+
+<pre>
+    n = 500
+    ws = np.random.random(n) * 6
+    wd = np.random.random(n) * 360
+    df1 = pd.DataFrame({'ws':ws, 'wd': wd})
+
+    ws = np.random.random(n) * 6
+    wd = np.random.random(n) * 360
+    df2 = pd.DataFrame({'ws':ws, 'wd': wd})
+
+    df = pd.concat({'x': df1, 'y': df2}, axis=1)
+
+    colnames = ['x', 'y']
+    thetavar = 'wd'
+    modvar = 'ws'
+
+    rmaxs = []
+    for vname in colnames:
+        dfi = df.xs(vname, axis=1)
+        ax = WindroseAxes.from_ax()
+        ax.bar(df[thetavar], dfi[modwar], normed=True, bins=bins)
+        rmaxs += [np.max(np.sum(ax._info["table"], axis=0))]
+        plt.close()
+    rmax = np.ceil(np.max(rmaxs)/10)*10
+    print rmax
+
+
+    fig, axs = plt.subplots(1,2, figsize=(8,4),
+                            subplot_kw={'projection': 'windrose',
+                                        'rmax': rmax})
+
+    for i,vname in enumerate(colnames):
+        ax = axs[i]
+        dfi = df.xs(vname, axis=1)
+        ax.bar(df[thetavar], dfi[modwar], normed=True, bins=bins)
+        ax.set_title(vname, y=1.1)
+    ax.legend(loc=(1.1,0), fontsize='small')#bbox_to_anchor=(1.1, 1.5))
+
+</pre>
+
+
+<!-- ############################################ -->
+<!-- ############################################ -->
+<!-- ############################################ -->
+<!-- ############################################ -->
+<!-- ############################################ -->
+<!-- ############################################ -->
+
+
+
+<hr>
+<h1>Other Stuff:</h1>
+<h2>Convert datetime to "days since 1-1-1" and reverse:</h2>
+<pre>
+    t0=datetime.datetime(2017,1,31,3)
+
+    <b>GOOD (736361.125):</b>
+        dt2ncep(t0)
+        netCDF4.date2num(t0, units='days since 0001-01-01 00:00:00', calendar='standard')
+
+    <b>BAD:</b>
+        t0 - datetime.datetime(1,1,1) # datetime.timedelta(736359, 10800)
+        matplotlib.dates.date2num(t0) # 736360.125
+</pre>
+
+<h2>Colors</h2>
+<a href="http://colorbrewer2.org" target="_blank"> http://colorbrewer2.org </a>
+
+
+<h2>Accessing netcdf data by coordinates</h2>
+
+Hycom example:
+<a href="http://www.unidata.ucar.edu/blogs/developer/entry/accessing_netcdf_data_by_coordinates">http://www.unidata.ucar.edu/blogs/developer/entry/accessing_netcdf_data_by_coordinates</a>
+
+<h2>Read, merge and write txt matrix with header</h2>
+<pre>
+    tpar=numpy.loadtxt(filetpar, skiprows=1)
+    tab=numpy.loadtxt(filetab, skiprows=7)
+    header=['BC_hs[m]','BC_tp[s]','BC_dp[deg]','St_hs[m]','St_tp[s]', 'St_dm[deg]','St_dp[deg]']
+    datout=numpy.c_[tpar[:,1:4], tab[:,(1,4,2,3)]]
+    f=open(fileout, 'w')
+    f.write(",".join(header)+"\n")
+    numpy.savetxt(f, datout, fmt='%.5f', delimiter=",")
+    f.close()
+</pre>
+
+<hr>
+<h1>Time Sheets From Google Calendar</h1>
+
+Export google calendar to csv with <a href="https://google-calendar-hours.com/">https://google-calendar-hours.com</a>
+
+<pre>
+    import pandas as pd
+    ts = pd.read_csv('Work_July_2019_(20190712141253).csv')
+    ts['date'] = pd.to_datetime(ts['End'])
+    ts = ts.set_index('date')
+    ts['day'] = ts.index.floor('d')
+    ts.pivot_table(values='Hours', index='Title', columns='day', aggfunc='sum', margins=True)
+</pre>
